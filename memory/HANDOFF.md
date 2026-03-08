@@ -51,6 +51,18 @@ Phase 21 Bug Fixes (re-test)                                             COMPLET
   - OTP double-submit fixed: submittingRef guard in handleVerify() prevents
     second verify-otp API call when button tapped while first is in flight
   - Final test result: 20/20 frontend + 9/9 backend — ALL PASSING ✅
+Phase 22 — Expo Go Native Crash Fix                                      COMPLETE
+  - Crash: Blue "Something went wrong" screen on Expo Go launch
+  - Root cause: intro.tsx imported { Video, ResizeMode } from 'expo-av'
+    expo-av/build/ExponentAV.js calls requireNativeModule('ExponentAV') at
+    module-load time. ExponentAV native module removed from Expo Go SDK 54.
+    Error: "Cannot find native module 'ExponentAV'" → crash on launch.
+  - Fix: Removed expo-av import from intro.tsx entirely.
+    Web branch uses HTML <video> tag (no expo-av needed on web).
+    Native branch shows plain black View — 5s timer + Skip button still work.
+  - NOTE: voice-notes.tsx + VoiceNotesSection.tsx still import Audio from expo-av.
+    Those screens will crash on Expo Go SDK 54 when navigated to.
+    To fix: replace expo-av Audio with expo-audio package (separate task).
 
 ### Phase 18A — Bulk WhatsApp Reminders
 - Screen: /app/frontend/app/bulk-reminders.tsx

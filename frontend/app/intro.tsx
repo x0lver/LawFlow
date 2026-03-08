@@ -20,13 +20,13 @@ import {
   Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Video, ResizeMode } from 'expo-av';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+// expo-av removed from Expo Go SDK 54 (native module 'ExponentAV' no longer exists).
+// Web uses HTML <video> directly. Native shows a plain black screen with skip + timer.
 
 const TOKEN_KEY = 'lawflow_auth_token';
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
-const videoUrl = `${BACKEND_URL}/api/static/intro.mp4`;
-const localAsset = require('../assets/videos/intro.mp4');
+const videoUrl = `${BACKEND_URL}/api/static/intro.mp4`; // web only
 
 export default function IntroScreen() {
   const router = useRouter();
@@ -74,19 +74,9 @@ export default function IntroScreen() {
           }}
         />
       ) : (
-        <Video
-          source={localAsset}
-          style={styles.video}
-          resizeMode={ResizeMode.COVER}
-          shouldPlay
-          isMuted
-          isLooping={false}
-          onPlaybackStatusUpdate={(status) => {
-            if (status.isLoaded && status.didJustFinish) {
-              navigateAway();
-            }
-          }}
-        />
+        // Native: expo-av removed from Expo Go SDK 54, show black screen.
+        // The 5-second timer + Skip button still navigate normally.
+        <View style={styles.video} />
       )}
 
       <TouchableOpacity
