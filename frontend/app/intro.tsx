@@ -5,6 +5,11 @@
  *
  * Web:    HTML <video> tag (autoPlay muted playsInline)
  * Native: expo-av Video component (Expo Go compatible)
+ *
+ * Phase 21 fix: navigateAway bypasses index.tsx entirely — does token
+ * check directly and routes to /(tabs) or /login. Eliminates the
+ * module-level introShown loop that caused infinite /intro redirects
+ * in web test environments.
  */
 import React, { useEffect, useRef } from 'react';
 import {
@@ -16,28 +21,36 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Video, ResizeMode } from 'expo-av';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
+const TOKEN_KEY = 'lawflow_auth_token';
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 const videoUrl = `${BACKEND_URL}/api/static/intro.mp4`;
 const localAsset = require('../assets/videos/intro.mp4');
-
-let _navigated = false;
 
 export default function IntroScreen() {
   const router = useRouter();
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navigatedRef = useRef(false);
 
-  const navigateAway = () => {
+  const navigateAway = async () => {
     if (navigatedRef.current) return;
     navigatedRef.current = true;
-    _navigated = true;
     if (timerRef.current) clearTimeout(timerRef.current);
-    router.replace('/');
+    // Bypass index.tsx — check token directly and route accordingly
+    try {
+      const token = await AsyncStorage.getItem(TOKEN_KEY);
+      if (token) {
+        router.replace('/(tabs)');
+      } else {
+        router.replace('/login');
+      }
+    } catch {
+      router.replace('/login');
+    }
   };
 
   useEffect(() => {
-    _navigated = false;
     timerRef.current = setTimeout(navigateAway, 5000);
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
