@@ -31,6 +31,7 @@ export default function OTPScreen() {
   const [error, setError] = useState('');
   const [resendTimer, setResendTimer] = useState(30);
   const inputRef = useRef<TextInput>(null);
+  const submittingRef = useRef(false);
 
   useEffect(() => {
     const t = setInterval(() => setResendTimer(v => Math.max(0, v - 1)), 1000);
@@ -38,7 +39,8 @@ export default function OTPScreen() {
   }, []);
 
   const handleVerify = async () => {
-    if (otp.length < OTP_LEN) return;
+    if (otp.length < OTP_LEN || submittingRef.current) return;
+    submittingRef.current = true;
     setError('');
     setLoading(true);
 
@@ -68,6 +70,7 @@ export default function OTPScreen() {
         }
         setError('Network error. Use 123456 for offline mode.');
         setLoading(false);
+        submittingRef.current = false;
         return;
       }
       // Backend returned error (wrong OTP etc.)
@@ -80,6 +83,7 @@ export default function OTPScreen() {
         }
         setError('Invalid OTP. Please try again.');
         setLoading(false);
+        submittingRef.current = false;
         return;
       }
       // Other error
@@ -87,6 +91,7 @@ export default function OTPScreen() {
     }
 
     setLoading(false);
+    submittingRef.current = false;
   };
 
   const handleResend = async () => {

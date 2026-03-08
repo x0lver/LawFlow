@@ -34,23 +34,23 @@ export default function TabsLayout() {
     >
       <Tabs.Screen
         name="index"
-        options={{ title: 'Dashboard', tabBarIcon: ({ focused }) => <TabIcon name="grid" focused={focused} /> }}
+        options={{ title: 'Dashboard', tabBarIcon: ({ focused }) => <TabIcon name="grid" focused={focused} />, tabBarButtonTestID: 'tab-dashboard' }}
       />
       <Tabs.Screen
         name="cases"
-        options={{ title: 'Cases', tabBarIcon: ({ focused }) => <TabIcon name="briefcase" focused={focused} /> }}
+        options={{ title: 'Cases', tabBarIcon: ({ focused }) => <TabIcon name="briefcase" focused={focused} />, tabBarButtonTestID: 'tab-cases' }}
       />
       <Tabs.Screen
         name="calendar"
-        options={{ title: 'Calendar', tabBarIcon: ({ focused }) => <TabIcon name="calendar" focused={focused} /> }}
+        options={{ title: 'Calendar', tabBarIcon: ({ focused }) => <TabIcon name="calendar" focused={focused} />, tabBarButtonTestID: 'tab-calendar' }}
       />
       <Tabs.Screen
         name="clients"
-        options={{ title: 'Clients', tabBarIcon: ({ focused }) => <TabIcon name="users" focused={focused} /> }}
+        options={{ title: 'Clients', tabBarIcon: ({ focused }) => <TabIcon name="users" focused={focused} />, tabBarButtonTestID: 'tab-clients' }}
       />
       <Tabs.Screen
         name="more"
-        options={{ title: 'More', tabBarIcon: ({ focused }) => <TabIcon name="more-horizontal" focused={focused} /> }}
+        options={{ title: 'More', tabBarIcon: ({ focused }) => <TabIcon name="more-horizontal" focused={focused} />, tabBarButtonTestID: 'tab-more' }}
       />
     </Tabs>
   );

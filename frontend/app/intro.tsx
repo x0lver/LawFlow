@@ -26,9 +26,11 @@ let _navigated = false;
 export default function IntroScreen() {
   const router = useRouter();
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const navigatedRef = useRef(false);
 
   const navigateAway = () => {
-    if (_navigated) return;
+    if (navigatedRef.current) return;
+    navigatedRef.current = true;
     _navigated = true;
     if (timerRef.current) clearTimeout(timerRef.current);
     router.replace('/');

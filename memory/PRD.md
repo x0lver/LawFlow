@@ -1,5 +1,20 @@
 # LawFlow — Product Requirements Document
-# Last Updated: 2026-03-06
+# Last Updated: 2026-03-08
+
+## Phase 21 — Platform Migration + Bug Fixes (COMPLETE)
+### What was done
+- Migrated project from GitHub to Emergent platform (protected .env files preserved)
+- Backend dependencies installed in /root/.venv: pytz, beautifulsoup4, lxml, APScheduler
+- Backend .env updated: APP_ENV=development, JWT_SECRET set
+- OTP double-submit fixed in otp.tsx using submittingRef guard
+- Intro skip navigation fixed in intro.tsx using useRef (replaces module-level flag)
+- Tab bar testIDs added (tab-dashboard, tab-cases, tab-calendar, tab-clients, tab-more)
+- HANDOFF.md cleaned: all git clone lines removed
+
+### Test Results (Phase 21)
+- Backend: 9/9 API tests passed (health, auth, profile, cases CRUD, clients CRUD, hearings)
+- Frontend: 18/20 features verified
+- Auth endpoint confirmed: /api/auth/request-otp (not send-otp)
 
 ## Product Overview
 LawFlow is a legal practice management app for Indian advocates built with Expo (React Native) and FastAPI/MongoDB backend.

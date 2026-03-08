@@ -1,8 +1,8 @@
 # LawFlow — Emergent Platform Handoff
-# Last Updated: 2026-03-08 (Phase 20 Complete)
+# Last Updated: 2026-03-08 (Phase 21 Complete)
 
 ================================================================================
-CURRENT STABLE STATE — Phase 20 Complete
+CURRENT STABLE STATE — Phase 21 Complete
 ================================================================================
 
 Phase 15 — Multi-Advocate Firm Mode, Client Portal, eCourts High Court   COMPLETE
@@ -12,12 +12,12 @@ Phase 18A — Bulk WhatsApp Reminder Screen                                COMPL
 Phase 18B — Professional PDF Reports (expo-print)                        COMPLETE
 Phase 19 — Video Launch Screen (expo-video)                              COMPLETE
   - New screen: /app/frontend/app/intro.tsx
-  - Uses expo-video v3.0.16 (useVideoPlayer + VideoView)
+  - Uses expo-av Video component (Expo Go compatible, SDK 54)
   - Video: /app/frontend/assets/videos/intro.mp4 (local) + /api/static/intro.mp4 (web)
   - Plays muted, fullscreen, no controls, black background
   - Skip button (testID: intro-skip-btn) visible immediately, top-right
   - 5-second auto-navigation timer → auth check → login
-  - Cold launch only: module-level `introShown` flag in index.tsx
+  - Cold launch only: module-level `introShown` flag in index.tsx + useRef guard
   - Flow: index.tsx → /intro → video plays → 5s/skip → back to / → auth → login/tabs
   - Backend: FastAPI StaticFiles serves /api/static/intro.mp4 for web playback
   - _layout.tsx: intro screen registered with animation: 'fade'
@@ -35,6 +35,15 @@ Phase 20 — Play Store Readiness Fixes                                    COMPL
   - Fix 6: Firm creation verified working — backend POST /api/firms returns 200, frontend passes auth token
   - Fix 7: Expo Go fixed — expo-asset peer dependency installed (previous session)
   - Fix 8: Delete case verified working — removes case + hearings from local state + backend
+Phase 21 — Platform Migration + Bug Fixes                                COMPLETE
+  - Migrated from GitHub to Emergent platform (git clone → rsync with protected .env preserved)
+  - Backend dependencies installed: pytz, beautifulsoup4, lxml in /root/.venv
+  - Backend .env updated: APP_ENV=development, JWT_SECRET added
+  - OTP double-submit fixed: submittingRef guard prevents race condition in otp.tsx
+  - Intro skip navigation fixed: useRef guard replaces module-level _navigated flag
+  - Tab bar testIDs added: tab-dashboard, tab-cases, tab-calendar, tab-clients, tab-more
+  - HANDOFF.md cleaned: removed git clone lines
+  - Test result: 9/9 backend tests pass, 18/20 frontend features verified
 
 ### Phase 18A — Bulk WhatsApp Reminders
 - Screen: /app/frontend/app/bulk-reminders.tsx
