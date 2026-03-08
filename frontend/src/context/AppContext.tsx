@@ -26,6 +26,12 @@ import {
   uploadBackupToDrive,
   downloadBackupFromDrive,
 } from '../services/googleDrive';
+import {
+  connectToDrive,
+  clearDriveToken,
+  getStoredDriveToken,
+  DRIVE_EMAIL_KEY,
+} from '../services/googleDriveFiles';
 
 export type { VoiceNote, AdvocateProfile, AppSettings };
 export type SyncStatus = 'synced' | 'syncing' | 'offline' | 'error';
@@ -64,6 +70,10 @@ export interface CaseDocument {
   uploadStatus: UploadStatus;
   uri?: string;
   createdAt: number;
+  // Phase 23 — Google Drive
+  googleDriveFileId?: string;
+  googleDriveUrl?: string;
+  isSynced?: boolean;
 }
 
 export interface AppNotification {
@@ -174,6 +184,14 @@ interface AppContextType {
   backupToGoogleDrive: () => Promise<void>;
   restoreFromGoogleDrive: () => Promise<void>;
 
+  // Phase 23 — Google Drive File Storage
+  isDriveConnected: boolean;
+  driveEmail: string;
+  connectDrive: () => Promise<boolean>;
+  disconnectDrive: () => void;
+  updateDocumentDriveSync: (id: string, driveFileId: string, driveUrl: string) => void;
+  updateVoiceNoteDriveSync: (id: string, driveFileId: string, driveUrl: string) => void;
+
   // Phase 15 — Firm Mode
   firm: Record<string, unknown> | null;
   firmDashboard: Record<string, unknown> | null;
@@ -254,6 +272,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [firmDashboard, setFirmDashboard] = useState<Record<string, unknown> | null>(null);
   const [advocateId, setAdvocateId] = useState<string | null>(null);
 
+  // Phase 23 — Google Drive File Storage
+  const [isDriveConnected, setIsDriveConnected] = useState(false);
+  const [driveEmail, setDriveEmail] = useState('');
+
   // Refs for stable access in callbacks
   const authTokenRef = useRef<string | null>(null);
   const casesRef = useRef<Case[]>([]);
@@ -313,6 +335,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           authTokenRef.current = sToken;
         }
         if (sBackupAt) setLastBackupAt(sBackupAt);
+
+        // Phase 23 — Restore Drive connection state
+        const dToken = await getStoredDriveToken();
+        if (dToken) {
+          const dEmail = await AsyncStorage.getItem(DRIVE_EMAIL_KEY);
+          setIsDriveConnected(true);
+          setDriveEmail(dEmail ?? 'Connected');
+        }
       } catch {
         if (!mounted) return;
         setCases(mockCases);
@@ -970,6 +1000,43 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     );
   }, []);
 
+  // ── Phase 23 — Google Drive File Storage ─────────────────────────
+  const connectDrive = useCallback(async (): Promise<boolean> => {
+    try {
+      const result = await connectToDrive();
+      if (!result) return false;
+      setIsDriveConnected(true);
+      setDriveEmail(result.email);
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  const disconnectDrive = useCallback(() => {
+    clearDriveToken();
+    setIsDriveConnected(false);
+    setDriveEmail('');
+  }, []);
+
+  const updateDocumentDriveSync = useCallback((id: string, driveFileId: string, driveUrl: string) => {
+    setDocuments(prev =>
+      prev.map(d => d.id === id
+        ? { ...d, googleDriveFileId: driveFileId, googleDriveUrl: driveUrl, uploadStatus: 'UPLOADED' as const, isSynced: true }
+        : d
+      )
+    );
+  }, []);
+
+  const updateVoiceNoteDriveSync = useCallback((id: string, driveFileId: string, driveUrl: string) => {
+    setVoiceNotes(prev =>
+      prev.map(v => v.id === id
+        ? { ...v, googleDriveFileId: driveFileId, googleDriveUrl: driveUrl, isSynced: true }
+        : v
+      )
+    );
+  }, []);
+
   // ── Phase 15 — Firm functions ─────────────────────────────────────
   const loadFirm = useCallback(async () => {
     if (!authTokenRef.current) return;
@@ -1042,6 +1109,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       sendWhatsAppMessage, sendSMSMessage,
       retrySyncAll, lastBackupAt, backupToGoogleDrive, restoreFromGoogleDrive,
       firm, firmDashboard, isFirmOwner, isFirmMember, loadFirm, loadFirmDashboard,
+      isDriveConnected, driveEmail, connectDrive, disconnectDrive,
+      updateDocumentDriveSync, updateVoiceNoteDriveSync,
     }}>
       {children}
     </AppContext.Provider>
@@ -1053,3 +1122,6 @@ export function useApp() {
   if (!ctx) throw new Error('useApp must be used within AppProvider');
   return ctx;
 }
+
+// Alias for components that use useAppContext
+export const useAppContext = useApp;

@@ -34,6 +34,7 @@ from routes.ecourts import router as ecourts_router  # noqa: E402
 from routes.notifications import router as notifications_router  # noqa: E402
 from routes.firms import router as firms_router  # noqa: E402
 from routes.client_portal import router as client_portal_router  # noqa: E402
+from routes.case_files import router as case_files_router  # noqa: E402
 from scheduler import start_scheduler, stop_scheduler  # noqa: E402
 
 app.include_router(auth_router, prefix="/api")
@@ -44,6 +45,7 @@ app.include_router(ecourts_router, prefix="/api")
 app.include_router(notifications_router, prefix="/api")
 app.include_router(firms_router, prefix="/api")
 app.include_router(client_portal_router, prefix="/api")
+app.include_router(case_files_router)
 
 # ── Logging ────────────────────────────────────────────────────────────────
 logging.basicConfig(

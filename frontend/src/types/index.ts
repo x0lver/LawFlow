@@ -20,6 +20,10 @@ export interface VoiceNote {
   uri: string;
   duration: number;
   createdAt: number;
+  // Phase 23 — Google Drive
+  googleDriveFileId?: string;
+  googleDriveUrl?: string;
+  isSynced?: boolean;
 }
 
 export interface AdvocateProfile {

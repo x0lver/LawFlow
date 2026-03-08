@@ -25,11 +25,16 @@ import {
 } from '../../src/utils/whatsappTemplates';
 import { VoiceNotesSection } from '../../src/components/common/VoiceNotesSection';
 import { CaseTimeline } from '../../src/components/common/CaseTimeline';
+import { DriveSetupSheet } from '../../src/components/common/DriveSetupSheet';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Sharing from 'expo-sharing';
 import { Linking } from 'react-native';
 import { ecourtsLookup } from '../../src/services/api';
+import {
+  getStoredDriveToken,
+  syncDocumentToDrive,
+} from '../../src/services/googleDriveFiles';
 
 const ECOURTS_PENDING_KEY = 'lawflow_ecourts_pending';
 
@@ -57,7 +62,8 @@ export default function CaseDetailScreen() {
     getHearingsByCaseId, getVoiceNotesByCaseId, getDocumentsByCaseId,
     addHearing, updateHearing, updateCase,
     addDocument, deleteDocument,
-    sendWhatsAppMessage, sendSMSMessage, advocateName
+    sendWhatsAppMessage, sendSMSMessage, advocateName,
+    isDriveConnected, connectDrive, updateDocumentDriveSync,
   } = useApp();
 
   const caseData = getCaseById(id as string);
@@ -94,6 +100,10 @@ export default function CaseDetailScreen() {
   const [printing, setPrinting] = useState(false);
   // Document picker sheet state (cross-platform: Alert is no-op on web)
   const [showDocSheet, setShowDocSheet] = useState(false);
+  // Phase 23 — Drive
+  const [showDriveSheet, setShowDriveSheet] = useState(false);
+  const [connectingDrive, setConnectingDrive] = useState(false);
+  const [uploadingDocId, setUploadingDocId] = useState<string | null>(null);
 
   // Hearing modals state
   const [showAddHearingModal, setShowAddHearingModal] = useState(false);
@@ -415,7 +425,39 @@ export default function CaseDetailScreen() {
 
   // ── Document handlers ──────────────────────────────────────────────
   const handleAddDocument = () => {
+    if (!isDriveConnected) {
+      setShowDriveSheet(true);
+      return;
+    }
     setShowDocSheet(true);
+  };
+
+  // Upload doc to Drive in background after picking
+  const uploadDocToDrive = async (docId: string, uri: string, fileName: string) => {
+    setUploadingDocId(docId);
+    try {
+      const token = await getStoredDriveToken();
+      if (!token) return;
+      const result = await syncDocumentToDrive(
+        uri, fileName,
+        caseData?.caseNumber ?? caseData?.id ?? '',
+        client?.name,
+        token,
+      );
+      updateDocumentDriveSync(docId, result.fileId, result.fileUrl);
+    } catch {
+      // saved locally, will show local icon
+    } finally {
+      setUploadingDocId(null);
+    }
+  };
+
+  const handleConnectDriveForDoc = async () => {
+    setConnectingDrive(true);
+    const ok = await connectDrive();
+    setConnectingDrive(false);
+    if (ok) { setShowDriveSheet(false); setShowDocSheet(true); }
+    else Alert.alert('Connection Failed', 'Could not connect to Google Drive.');
   };
 
   const pickDocument = async (idx: number) => {
@@ -433,7 +475,8 @@ export default function CaseDetailScreen() {
       if (!result.canceled && result.assets[0]) {
         const asset = result.assets[0];
         const name = asset.fileName ?? `Photo_${Date.now()}.jpg`;
-        addDocument({ caseId: caseData.id, caseName: caseData.title, fileName: name.length > 30 ? name.slice(0, 27) + '...' : name, fileType: 'IMAGE', fileSize: '—', uploadStatus: 'LOCAL_ONLY', uri: asset.uri });
+        const doc = addDocument({ caseId: caseData.id, caseName: caseData.title, fileName: name.length > 30 ? name.slice(0, 27) + '...' : name, fileType: 'IMAGE', fileSize: '—', uploadStatus: 'LOCAL_ONLY', uri: asset.uri });
+        if (asset.uri) uploadDocToDrive(doc.id, asset.uri, name);
       }
     } else if (idx === 1) {
       // Photo Library
@@ -449,7 +492,8 @@ export default function CaseDetailScreen() {
       if (!result.canceled && result.assets[0]) {
         const asset = result.assets[0];
         const name = asset.fileName ?? `Image_${Date.now()}.jpg`;
-        addDocument({ caseId: caseData.id, caseName: caseData.title, fileName: name.length > 30 ? name.slice(0, 27) + '...' : name, fileType: 'IMAGE', fileSize: '—', uploadStatus: 'LOCAL_ONLY', uri: asset.uri });
+        const doc = addDocument({ caseId: caseData.id, caseName: caseData.title, fileName: name.length > 30 ? name.slice(0, 27) + '...' : name, fileType: 'IMAGE', fileSize: '—', uploadStatus: 'LOCAL_ONLY', uri: asset.uri });
+        if (asset.uri) uploadDocToDrive(doc.id, asset.uri, name);
       }
     } else if (idx === 2) {
       // Document/PDF picker
@@ -465,7 +509,8 @@ export default function CaseDetailScreen() {
           const fileType = ext === 'PDF' ? 'PDF' : ext === 'DOCX' || ext === 'DOC' ? 'WORD' : ext === 'XLSX' || ext === 'XLS' ? 'EXCEL' : 'OTHER';
           const sizeKb = asset.size ? Math.round(asset.size / 1024) : null;
           const sizeStr = sizeKb ? (sizeKb > 1024 ? `${(sizeKb / 1024).toFixed(1)} MB` : `${sizeKb} KB`) : '—';
-          addDocument({ caseId: caseData.id, caseName: caseData.title, fileName: name.length > 30 ? name.slice(0, 27) + '...' : name, fileType: fileType as any, fileSize: sizeStr, uploadStatus: 'LOCAL_ONLY', uri: asset.uri });
+          const doc = addDocument({ caseId: caseData.id, caseName: caseData.title, fileName: name.length > 30 ? name.slice(0, 27) + '...' : name, fileType: fileType as any, fileSize: sizeStr, uploadStatus: 'LOCAL_ONLY', uri: asset.uri });
+          if (asset.uri) uploadDocToDrive(doc.id, asset.uri, name);
         }
       } catch {
         Alert.alert('Error', 'Could not open document picker.');
@@ -811,7 +856,20 @@ export default function CaseDetailScreen() {
                       {doc.fileType} · {doc.fileSize} · {fmtDate(doc.createdAt)}
                     </Text>
                   </View>
-                  <Feather name="more-vertical" size={16} color={c.textTertiary} />
+                  {/* Drive sync status */}
+                  {uploadingDocId === doc.id ? (
+                    <ActivityIndicator size="small" color={c.primary} />
+                  ) : (doc as any).googleDriveFileId ? (
+                    <Feather name="cloud" size={16} color="#4285F4" />
+                  ) : (
+                    <TouchableOpacity
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      onPress={() => uploadDocToDrive(doc.id, doc.uri ?? '', doc.fileName)}
+                      testID={`sync-doc-${doc.id}`}
+                    >
+                      <Feather name="upload-cloud" size={16} color={c.textSecondary} />
+                    </TouchableOpacity>
+                  )}
                 </TouchableOpacity>
               ))}
             </View>
@@ -819,7 +877,12 @@ export default function CaseDetailScreen() {
         </View>
 
         {/* Voice Notes */}
-        <VoiceNotesSection caseId={caseData.id} caseName={caseData.title} />
+        <VoiceNotesSection
+          caseId={caseData.id}
+          caseName={caseData.title}
+          caseNumber={(caseData as any).caseNumber ?? ''}
+          clientName={client?.name}
+        />
 
         {/* Notes */}
         {caseData.notes && (
@@ -1239,6 +1302,14 @@ export default function CaseDetailScreen() {
           </View>
         </TouchableOpacity>
       </Modal>
+
+      {/* Phase 23 — Drive Setup Sheet */}
+      <DriveSetupSheet
+        visible={showDriveSheet}
+        connecting={connectingDrive}
+        onConnect={handleConnectDriveForDoc}
+        onDismiss={() => setShowDriveSheet(false)}
+      />
     </SafeAreaView>
   );
 }

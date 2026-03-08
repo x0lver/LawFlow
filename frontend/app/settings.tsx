@@ -14,6 +14,7 @@ import {
   rescheduleAllReminders,
 } from '../src/utils/notificationService';
 import * as Notifications from 'expo-notifications';
+import { Linking } from 'react-native';
 
 const REMINDER_OPTIONS = [
   { label: 'Same day', value: 0 },
@@ -71,7 +72,7 @@ export default function SettingsScreen() {
   const router = useRouter();
   const c = useColors();
   const styles = useMemo(() => makeStyles(c), [c]);
-  const { settings, updateSettings, clearAllData, cases, clients, hearings, advocateName, backupToGoogleDrive, restoreFromGoogleDrive, lastBackupAt } = useApp();
+  const { settings, updateSettings, clearAllData, cases, clients, hearings, advocateName, backupToGoogleDrive, restoreFromGoogleDrive, lastBackupAt, isDriveConnected, driveEmail, connectDrive, disconnectDrive } = useApp();
   const [showReminderPicker, setShowReminderPicker] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [backing, setBacking] = useState(false);
@@ -168,6 +169,26 @@ export default function SettingsScreen() {
     await backupToGoogleDrive();
     setBacking(false);
   }, [backupToGoogleDrive]);
+
+  // Phase 23 — Drive connect/disconnect handlers
+  const [connectingDrive, setConnectingDrive] = useState(false);
+  const handleConnectDrive = useCallback(async () => {
+    setConnectingDrive(true);
+    const ok = await connectDrive();
+    setConnectingDrive(false);
+    if (!ok) Alert.alert('Connection Failed', 'Could not connect to Google Drive. Ensure the Client ID is configured and try again.');
+  }, [connectDrive]);
+
+  const handleDisconnectDrive = useCallback(() => {
+    Alert.alert(
+      'Disconnect Google Drive',
+      'Local copies of your files will remain on the device. New uploads will not sync to Drive.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Disconnect', style: 'destructive', onPress: disconnectDrive },
+      ],
+    );
+  }, [disconnectDrive]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -282,6 +303,60 @@ export default function SettingsScreen() {
             </View>
             <Feather name="chevron-right" size={15} color="#FF3B30" />
           </TouchableOpacity>
+        </View>
+
+        {/* STORAGE — Google Drive File Storage */}
+        <Text style={styles.sectionLabel}>STORAGE</Text>
+        <View style={styles.section}>
+          <View style={styles.row} testID="drive-storage-row">
+            <View style={{ marginRight: Spacing.s }}>
+              <Feather name="hard-drive" size={18} color={isDriveConnected ? '#4285F4' : c.textSecondary} />
+            </View>
+            <View style={styles.rowInfo}>
+              <Text style={styles.rowLabel}>Google Drive</Text>
+              {isDriveConnected
+                ? <Text style={[styles.rowSub, { color: '#4285F4' }]}>Connected as {driveEmail}</Text>
+                : <Text style={styles.rowSub}>Documents &amp; voice notes sync here</Text>}
+            </View>
+            {isDriveConnected ? (
+              <TouchableOpacity
+                testID="drive-disconnect-btn"
+                onPress={handleDisconnectDrive}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={{ ...Typography.subhead, color: '#FF3B30', fontWeight: '600' }}>Disconnect</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                testID="drive-connect-settings-btn"
+                style={{ backgroundColor: '#4285F4', borderRadius: Radius.s, paddingHorizontal: 12, paddingVertical: 6 }}
+                onPress={handleConnectDrive}
+                disabled={connectingDrive}
+                activeOpacity={0.8}
+              >
+                {connectingDrive
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Text style={{ ...Typography.caption1, fontWeight: '700', color: '#fff' }}>Connect</Text>}
+              </TouchableOpacity>
+            )}
+          </View>
+          {isDriveConnected && (
+            <>
+              <View style={styles.divider} />
+              <TouchableOpacity
+                testID="view-drive-files-btn"
+                style={styles.row}
+                activeOpacity={0.7}
+                onPress={() => Linking.openURL('https://drive.google.com/drive/folders')}
+              >
+                <Feather name="external-link" size={16} color={c.textSecondary} style={{ marginRight: Spacing.s }} />
+                <View style={styles.rowInfo}>
+                  <Text style={styles.rowLabel}>View LawFlow folder in Drive</Text>
+                </View>
+                <Feather name="chevron-right" size={15} color={c.textTertiary} />
+              </TouchableOpacity>
+            </>
+          )}
         </View>
 
         {/* DATA BACKUP */}

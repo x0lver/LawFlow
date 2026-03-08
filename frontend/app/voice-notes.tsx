@@ -1,219 +1,284 @@
-import React, { useState, useRef } from 'react';
+/**
+ * Phase 23 — Voice Notes Screen (standalone /voice-notes route)
+ * Migrated from expo-av → expo-audio (SDK 54 compatible)
+ */
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity,
-  Alert, Platform, Animated,
+  View, Text, StyleSheet, TouchableOpacity,
+  FlatList, Alert, ActivityIndicator, Platform,
+  SafeAreaView,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import {
+  useAudioRecorder,
+  useAudioRecorderState,
+  useAudioPlayer,
+  useAudioPlayerStatus,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+  RecordingPresets,
+} from 'expo-audio';
 import { Feather } from '@expo/vector-icons';
-import { Audio } from 'expo-av';
-import { Colors, Typography, Spacing, Radius } from '../src/theme';
-import { useApp, VoiceNote } from '../src/context/AppContext';
+import { useRouter } from 'expo-router';
+import { useAppContext } from '../src/context/AppContext';
+import { useColors, Typography, Spacing, Radius } from '../src/theme';
+import { VoiceNote } from '../src/types';
+import { DriveSetupSheet } from '../src/components/common/DriveSetupSheet';
+import {
+  getStoredDriveToken,
+  syncVoiceNoteToDrive,
+} from '../src/services/googleDriveFiles';
 
 function fmtDuration(secs: number) {
-  const m = Math.floor(secs / 60);
-  const s = secs % 60;
-  return `${m}:${s.toString().padStart(2, '0')}`;
+  const m = Math.floor(secs / 60).toString().padStart(2, '0');
+  const s = Math.floor(secs % 60).toString().padStart(2, '0');
+  return `${m}:${s}`;
 }
-function fmtTime(ts: number) {
-  const d = new Date(ts);
-  return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+
+function fmtDate(ts: number) {
+  return new Date(ts).toLocaleDateString('en-IN', {
+    day: 'numeric', month: 'short', year: 'numeric',
+  });
 }
 
 export default function VoiceNotesScreen() {
   const router = useRouter();
-  const { voiceNotes, addVoiceNote, deleteVoiceNote, cases } = useApp();
-  const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const c = useColors();
+  const {
+    voiceNotes, addVoiceNote, deleteVoiceNote,
+    isDriveConnected, connectDrive, updateVoiceNoteDriveSync,
+  } = useAppContext();
+
+  // ── Recorder ──────────────────────────────────────────────────────
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const recState = useAudioRecorderState(recorder, 500);
   const [isRecording, setIsRecording] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
+  const [recordingError, setRecordingError] = useState('');
+
+  // ── Player ────────────────────────────────────────────────────────
+  const player = useAudioPlayer(null);
+  const playerStatus = useAudioPlayerStatus(player);
   const [playingId, setPlayingId] = useState<string | null>(null);
-  const soundRef = useRef<Audio.Sound | null>(null);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pulse = useRef(new Animated.Value(1)).current;
+  const prevPlayingRef = useRef(playerStatus.playing);
 
-  const startPulse = () => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, { toValue: 1.15, duration: 600, useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 1, duration: 600, useNativeDriver: true }),
-      ])
-    ).start();
-  };
+  useEffect(() => {
+    if (prevPlayingRef.current && !playerStatus.playing && playingId !== null) {
+      setPlayingId(null);
+    }
+    prevPlayingRef.current = playerStatus.playing;
+  }, [playerStatus.playing]);
 
-  const stopPulse = () => {
-    pulse.stopAnimation();
-    pulse.setValue(1);
+  // ── Drive sheet ───────────────────────────────────────────────────
+  const [showDriveSheet, setShowDriveSheet] = useState(false);
+  const [connectingDrive, setConnectingDrive] = useState(false);
+  const [uploadingId, setUploadingId] = useState<string | null>(null);
+
+  // ── Record handlers ───────────────────────────────────────────────
+  const handleRecord = async () => {
+    if (isRecording) {
+      await stopRecording();
+    } else {
+      if (!isDriveConnected) { setShowDriveSheet(true); return; }
+      await startRecording();
+    }
   };
 
   const startRecording = async () => {
+    setRecordingError('');
     try {
-      if (Platform.OS !== 'web') {
-        const { granted } = await Audio.requestPermissionsAsync();
-        if (!granted) {
-          Alert.alert('Permission Required', 'Microphone access is needed to record voice notes.');
-          return;
-        }
-        await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-      }
-      const rec = new Audio.Recording();
-      await rec.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-      await rec.startAsync();
-      setRecording(rec);
+      const { granted } = await requestRecordingPermissionsAsync();
+      if (!granted) { setRecordingError('Microphone permission denied'); return; }
+      await setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      await recorder.prepareToRecordAsync();
+      recorder.record();
       setIsRecording(true);
-      setElapsed(0);
-      startPulse();
-      timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
-    } catch (e) {
-      Alert.alert('Error', 'Could not start recording. Please check microphone permissions.');
+    } catch {
+      setRecordingError('Could not start recording');
     }
   };
 
   const stopRecording = async () => {
-    if (!recording) return;
     try {
-      if (timerRef.current) clearInterval(timerRef.current);
-      stopPulse();
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI() ?? '';
-      const duration = elapsed;
-      setRecording(null);
+      await recorder.stop();
+      const uri = recorder.uri;
+      if (!uri) { setIsRecording(false); return; }
+      const now = Date.now();
+      const durationSecs = Math.round((recState.durationMillis ?? 0) / 1000);
+      const fileName = `VoiceNote_${new Date(now).toISOString().slice(0, 10)}.m4a`;
+      const note: VoiceNote = {
+        id: `vn_${now}`, caseId: undefined, caseName: undefined,
+        title: fileName, uri,
+        duration: durationSecs, createdAt: now, isSynced: false,
+      };
+      addVoiceNote(note);
       setIsRecording(false);
-      const title = `Voice Note ${new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`;
-      addVoiceNote({ title, uri, duration, caseId: undefined, caseName: undefined });
-      setElapsed(0);
+      uploadNote(note, uri, fileName);
     } catch {
       setIsRecording(false);
-      setElapsed(0);
     }
   };
 
-  const playNote = async (note: VoiceNote) => {
+  const uploadNote = async (note: VoiceNote, uri: string, fileName: string) => {
+    setUploadingId(note.id);
     try {
-      if (soundRef.current) {
-        await soundRef.current.unloadAsync();
-        soundRef.current = null;
-      }
-      if (playingId === note.id) { setPlayingId(null); return; }
-      if (!note.uri) { Alert.alert('Not available', 'Recording URI not available in web preview.'); return; }
-      const { sound } = await Audio.Sound.createAsync({ uri: note.uri });
-      soundRef.current = sound;
-      setPlayingId(note.id);
-      await sound.playAsync();
-      sound.setOnPlaybackStatusUpdate((status) => {
-        if (status.isLoaded && status.didJustFinish) { setPlayingId(null); }
-      });
+      const token = await getStoredDriveToken();
+      if (!token) return;
+      const result = await syncVoiceNoteToDrive(uri, fileName, 'General', undefined, token);
+      updateVoiceNoteDriveSync(note.id, result.fileId, result.fileUrl);
     } catch {
-      Alert.alert('Playback Error', 'Could not play this recording.');
-      setPlayingId(null);
+      // saved locally
+    } finally {
+      setUploadingId(null);
     }
   };
 
-  const handleDelete = (id: string) => {
-    Alert.alert('Delete Note', 'Delete this voice note?', [
+  // ── Play ──────────────────────────────────────────────────────────
+  const handlePlayPause = useCallback(async (note: VoiceNote) => {
+    if (playingId === note.id) {
+      player.pause(); setPlayingId(null); return;
+    }
+    if (playingId !== null) player.pause();
+    player.replace({ uri: note.uri });
+    await setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+    player.play();
+    setPlayingId(note.id);
+  }, [playingId, player]);
+
+  const handleDelete = (note: VoiceNote) => {
+    Alert.alert('Delete', 'Delete this voice note?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => deleteVoiceNote(id) },
+      { text: 'Delete', style: 'destructive', onPress: () => {
+        if (playingId === note.id) { player.pause(); setPlayingId(null); }
+        deleteVoiceNote(note.id);
+      }},
     ]);
   };
 
+  const handleConnectDrive = async () => {
+    setConnectingDrive(true);
+    const ok = await connectDrive();
+    setConnectingDrive(false);
+    if (ok) { setShowDriveSheet(false); await startRecording(); }
+    else Alert.alert('Connection Failed', 'Could not connect to Google Drive.');
+  };
+
+  const styles = makeStyles(c);
+
   return (
-    <SafeAreaView style={s.safe} edges={['top']}>
-      <View style={s.header}>
-        <TouchableOpacity onPress={() => router.back()} style={s.back}>
-          <Feather name="arrow-left" size={22} color={Colors.textPrimary} />
+    <SafeAreaView style={styles.safe} testID="voice-notes-screen">
+      {/* Header */}
+      <View style={styles.headerBar}>
+        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <Feather name="arrow-left" size={22} color={c.textPrimary} />
         </TouchableOpacity>
-        <Text style={s.title}>Voice Notes</Text>
-        <View style={{ width: 36 }} />
+        <Text style={styles.headerTitle}>Voice Notes</Text>
+        <View style={{ width: 22 }} />
       </View>
 
-      <FlatList
-        data={voiceNotes}
-        keyExtractor={i => i.id}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={[s.list, voiceNotes.length === 0 && s.emptyList]}
-        ListEmptyComponent={
-          <View style={s.empty}>
-            <Feather name="mic-off" size={48} color={Colors.textTertiary} />
-            <Text style={s.emptyTitle}>No voice notes yet</Text>
-            <Text style={s.emptySub}>Tap the record button below to start</Text>
+      {/* Record button */}
+      <View style={styles.recorderCard}>
+        <TouchableOpacity
+          testID={isRecording ? 'stop-recording-btn' : 'start-recording-btn'}
+          style={[styles.bigRecordBtn, isRecording && styles.bigRecordBtnActive]}
+          onPress={handleRecord}
+          activeOpacity={0.8}
+        >
+          <Feather name={isRecording ? 'square' : 'mic'} size={28} color="#fff" />
+          <Text style={styles.bigRecordBtnText}>
+            {isRecording
+              ? `Stop  ${fmtDuration((recState.durationMillis ?? 0) / 1000)}`
+              : 'Start Recording'}
+          </Text>
+        </TouchableOpacity>
+        {recordingError ? <Text style={styles.errorText}>{recordingError}</Text> : null}
+        {!isDriveConnected && (
+          <View style={styles.driveBanner}>
+            <Feather name="alert-circle" size={14} color="#F59E0B" />
+            <Text style={styles.driveBannerText}>Connect Google Drive to save recordings safely</Text>
           </View>
-        }
+        )}
+      </View>
+
+      {/* List */}
+      <FlatList
+        data={voiceNotes.filter(n => !n.caseId)}
+        keyExtractor={n => n.id}
+        contentContainerStyle={styles.list}
+        ListEmptyComponent={(
+          <View style={styles.empty}>
+            <Feather name="mic-off" size={32} color={c.textSecondary} />
+            <Text style={styles.emptyText}>No recordings yet</Text>
+          </View>
+        )}
         renderItem={({ item }) => (
-          <View style={s.noteCard} testID={`voice-note-${item.id}`}>
-            <TouchableOpacity style={s.playBtn} onPress={() => playNote(item)} activeOpacity={0.7}>
-              <Feather name={playingId === item.id ? 'square' : 'play'} size={18} color={Colors.white} />
+          <View style={styles.noteRow} testID={`voice-note-${item.id}`}>
+            <TouchableOpacity style={styles.playBtn} onPress={() => handlePlayPause(item)}>
+              <Feather name={playingId === item.id ? 'pause-circle' : 'play-circle'} size={36} color={c.primary} />
             </TouchableOpacity>
-            <View style={s.noteInfo}>
-              <Text style={s.noteTitle} numberOfLines={1}>{item.title}</Text>
-              <View style={s.noteMetaRow}>
-                <Text style={s.noteMeta}>{fmtDuration(item.duration)}</Text>
-                {item.caseName && <Text style={s.noteMeta} numberOfLines={1}> · {item.caseName}</Text>}
-              </View>
-              <Text style={s.noteTime}>{fmtTime(item.createdAt)}</Text>
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text style={styles.noteTitle} numberOfLines={1}>{item.title}</Text>
+              <Text style={styles.noteMeta}>{fmtDuration(item.duration)} · {fmtDate(item.createdAt)}</Text>
             </View>
-            <TouchableOpacity onPress={() => handleDelete(item.id)} style={s.deleteBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Feather name="trash-2" size={15} color={Colors.textTertiary} />
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              {uploadingId === item.id
+                ? <ActivityIndicator size="small" color={c.primary} />
+                : item.isSynced
+                  ? <Feather name="cloud" size={16} color="#4285F4" />
+                  : <Feather name="smartphone" size={16} color={c.textSecondary} />}
+              <TouchableOpacity onPress={() => handleDelete(item)} testID={`delete-voice-note-${item.id}`}>
+                <Feather name="trash-2" size={18} color="#EF4444" />
+              </TouchableOpacity>
+            </View>
           </View>
         )}
       />
 
-      {/* Record Button */}
-      <View style={s.recBar}>
-        {isRecording && (
-          <Text style={s.recTimer}>{fmtDuration(elapsed)}</Text>
-        )}
-        <Animated.View style={{ transform: [{ scale: pulse }] }}>
-          <TouchableOpacity
-            testID="record-btn"
-            style={[s.recBtn, isRecording && s.recBtnActive]}
-            onPress={isRecording ? stopRecording : startRecording}
-            activeOpacity={0.8}
-          >
-            <Feather name={isRecording ? 'square' : 'mic'} size={26} color={Colors.white} />
-          </TouchableOpacity>
-        </Animated.View>
-        <Text style={s.recLabel}>{isRecording ? 'Tap to stop' : 'Tap to record'}</Text>
-      </View>
+      <DriveSetupSheet
+        visible={showDriveSheet}
+        connecting={connectingDrive}
+        onConnect={handleConnectDrive}
+        onDismiss={() => setShowDriveSheet(false)}
+      />
     </SafeAreaView>
   );
 }
 
-const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.background },
-  header: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: Spacing.m, paddingTop: Spacing.s, paddingBottom: Spacing.m,
-    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.border,
+const makeStyles = (c: any) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: c.background },
+  headerBar: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: Spacing.l, paddingVertical: 14,
+    borderBottomWidth: 1, borderBottomColor: c.border,
   },
-  back: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  title: { flex: 1, ...Typography.headline, color: Colors.textPrimary, textAlign: 'center' },
-  list: { padding: Spacing.m, paddingBottom: 120 },
-  emptyList: { flex: 1 },
-  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.s, paddingTop: 60 },
-  emptyTitle: { ...Typography.title3, color: Colors.textSecondary },
-  emptySub: { ...Typography.subhead, color: Colors.textTertiary },
-  noteCard: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.m,
-    backgroundColor: Colors.surface, borderRadius: Radius.m,
+  headerTitle: { ...Typography.headline, fontWeight: '700', color: c.textPrimary },
+  recorderCard: {
+    margin: Spacing.l, backgroundColor: c.surface,
+    borderRadius: Radius.l, padding: Spacing.l,
+    alignItems: 'center', gap: 12,
+  },
+  bigRecordBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: c.primary, borderRadius: Radius.xl,
+    paddingVertical: 16, paddingHorizontal: 32,
+  },
+  bigRecordBtnActive: { backgroundColor: '#EF4444' },
+  bigRecordBtnText: { ...Typography.title3, fontWeight: '700', color: '#fff' },
+  errorText: { ...Typography.caption1, color: '#EF4444' },
+  driveBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#FEF3C7', borderRadius: Radius.s,
+    paddingHorizontal: 10, paddingVertical: 6, alignSelf: 'stretch',
+    justifyContent: 'center',
+  },
+  driveBannerText: { ...Typography.caption1, color: '#92400E', flex: 1 },
+  list: { paddingHorizontal: Spacing.l, paddingBottom: 40 },
+  empty: { alignItems: 'center', paddingVertical: 48, gap: 12 },
+  emptyText: { ...Typography.subhead, color: c.textSecondary },
+  noteRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: c.surface, borderRadius: Radius.m,
     padding: Spacing.m, marginBottom: Spacing.s,
   },
-  playBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: Colors.black, alignItems: 'center', justifyContent: 'center' },
-  noteInfo: { flex: 1, gap: 2 },
-  noteTitle: { ...Typography.subhead, fontWeight: '500', color: Colors.textPrimary },
-  noteMetaRow: { flexDirection: 'row', alignItems: 'center' },
-  noteMeta: { ...Typography.caption1, color: Colors.textSecondary, flexShrink: 1 },
-  noteTime: { ...Typography.caption2, color: Colors.textTertiary },
-  deleteBtn: { padding: 4 },
-  recBar: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    backgroundColor: Colors.background,
-    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.border,
-    paddingBottom: Platform.OS === 'ios' ? 36 : 16,
-    paddingTop: Spacing.m,
-    alignItems: 'center', gap: Spacing.s,
-  },
-  recTimer: { ...Typography.title2, color: Colors.textPrimary, fontVariant: ['tabular-nums'] },
-  recBtn: { width: 70, height: 70, borderRadius: 35, backgroundColor: Colors.black, alignItems: 'center', justifyContent: 'center' },
-  recBtnActive: { backgroundColor: '#333' },
-  recLabel: { ...Typography.caption1, color: Colors.textSecondary },
+  playBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  noteTitle: { ...Typography.subhead, fontWeight: '600', color: c.textPrimary },
+  noteMeta: { ...Typography.caption1, color: c.textSecondary },
 });
