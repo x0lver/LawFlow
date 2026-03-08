@@ -44,6 +44,13 @@ Phase 21 — Platform Migration + Bug Fixes                                COMPL
   - Tab bar testIDs added: tab-dashboard, tab-cases, tab-calendar, tab-clients, tab-more
   - HANDOFF.md cleaned: removed git clone lines
   - Test result: 9/9 backend tests pass, 18/20 frontend features verified
+Phase 21 Bug Fixes (re-test)                                             COMPLETE
+  - Intro Skip navigation fixed: navigateAway() now does AsyncStorage token check
+    directly → routes to /login or /(tabs), bypassing index.tsx completely
+    (eliminates module-level introShown infinite loop on web)
+  - OTP double-submit fixed: submittingRef guard in handleVerify() prevents
+    second verify-otp API call when button tapped while first is in flight
+  - Final test result: 20/20 frontend + 9/9 backend — ALL PASSING ✅
 
 ### Phase 18A — Bulk WhatsApp Reminders
 - Screen: /app/frontend/app/bulk-reminders.tsx
