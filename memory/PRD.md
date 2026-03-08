@@ -1,7 +1,30 @@
 # LawFlow — Product Requirements Document
 # Last Updated: 2026-03-08
 
-## Phase 21 — Platform Migration + Bug Fixes (COMPLETE)
+## Phase 23 — Google Drive File Storage (COMPLETE)
+### What was done
+- expo-av completely removed from VoiceNotesSection + voice-notes.tsx (fixes Expo Go SDK 54 crash)
+- Migrated to expo-audio: useAudioRecorder, useAudioPlayer hooks
+- New: src/services/googleDriveFiles.ts — OAuth token persistence, folder creation, file upload
+- New: src/components/common/DriveSetupSheet.tsx — "Google Drive Required" bottom sheet
+- New: backend/routes/case_files.py — metadata CRUD (never stores binary files in MongoDB)
+- AppContext: isDriveConnected, driveEmail, connectDrive, disconnectDrive ADDED (no refactor)
+- cases/[id].tsx: Drive check before file picker; Drive/local icons per doc; upload-to-Drive
+- settings.tsx: STORAGE section with Drive connect/disconnect + "View in Drive" link
+- Folder structure: LawFlow/[CaseNumber — ClientName]/Documents|VoiceNotes/
+- EXPO_PUBLIC_GOOGLE_CLIENT_ID placeholder in .env — user must add real ID
+
+### To activate Google Drive:
+1. console.cloud.google.com → Create OAuth 2.0 Web client ID
+2. Add https://auth.expo.io as Authorized Redirect URI
+3. Replace REPLACE_WITH_GOOGLE_CLIENT_ID in frontend/.env
+4. Restart expo service
+
+### Test Results
+- Backend case-files: 8/8 tests pass
+- Frontend: all Phase 23 features verified ✅
+- expo-av crash on Expo Go: RESOLVED
+
 ### What was done
 - Migrated project from GitHub to Emergent platform (protected .env files preserved)
 - Backend dependencies installed in /root/.venv: pytz, beautifulsoup4, lxml, APScheduler

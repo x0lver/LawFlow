@@ -47,22 +47,30 @@ Phase 21 — Platform Migration + Bug Fixes                                COMPL
 Phase 21 Bug Fixes (re-test)                                             COMPLETE
   - Intro Skip navigation fixed: navigateAway() now does AsyncStorage token check
     directly → routes to /login or /(tabs), bypassing index.tsx completely
-    (eliminates module-level introShown infinite loop on web)
-  - OTP double-submit fixed: submittingRef guard in handleVerify() prevents
-    second verify-otp API call when button tapped while first is in flight
+  - OTP double-submit fixed: submittingRef guard in handleVerify()
   - Final test result: 20/20 frontend + 9/9 backend — ALL PASSING ✅
 Phase 22 — Expo Go Native Crash Fix                                      COMPLETE
-  - Crash: Blue "Something went wrong" screen on Expo Go launch
-  - Root cause: intro.tsx imported { Video, ResizeMode } from 'expo-av'
-    expo-av/build/ExponentAV.js calls requireNativeModule('ExponentAV') at
-    module-load time. ExponentAV native module removed from Expo Go SDK 54.
-    Error: "Cannot find native module 'ExponentAV'" → crash on launch.
-  - Fix: Removed expo-av import from intro.tsx entirely.
-    Web branch uses HTML <video> tag (no expo-av needed on web).
-    Native branch shows plain black View — 5s timer + Skip button still work.
-  - NOTE: voice-notes.tsx + VoiceNotesSection.tsx still import Audio from expo-av.
-    Those screens will crash on Expo Go SDK 54 when navigated to.
-    To fix: replace expo-av Audio with expo-audio package (separate task).
+  - Removed expo-av import from intro.tsx (ExponentAV not in Expo Go SDK 54)
+  - Web still uses HTML <video> tag; native shows black screen + skip + 5s timer
+Phase 23 — Google Drive File Storage                                     COMPLETE
+  - expo-av → expo-audio migration in VoiceNotesSection + voice-notes.tsx
+    (fixes remaining expo-av crash on Expo Go SDK 54)
+  - New: src/services/googleDriveFiles.ts — folder creation, file upload, token mgmt
+  - New: src/components/common/DriveSetupSheet.tsx — Drive prompt bottom sheet
+  - New: backend/routes/case_files.py — metadata-only CRUD (never stores binary)
+  - AppContext: isDriveConnected, driveEmail, connectDrive, disconnectDrive,
+    updateDocumentDriveSync, updateVoiceNoteDriveSync — ADDED ONLY, no refactor
+  - cases/[id].tsx: Drive check before file picker; Drive icon + upload-cloud
+    button per document; DriveSetupSheet shown if not connected
+  - voice-notes.tsx + VoiceNotesSection: record-then-upload-to-Drive flow;
+    Drive banner when disconnected; cloud/smartphone icons per note
+  - settings.tsx: STORAGE section with Google Drive connect/disconnect;
+    "View LawFlow folder in Drive" link when connected
+  - Drive folder structure: LawFlow/[CaseNumber — ClientName]/Documents|VoiceNotes/
+  - Files never stored in MongoDB — only metadata (fileId, fileUrl, localUri)
+  - EXPO_PUBLIC_GOOGLE_CLIENT_ID=REPLACE_WITH_GOOGLE_CLIENT_ID in .env
+    → User must replace with real OAuth client ID from Google Cloud Console
+  - Test result: 8/8 backend case-files tests + all frontend features ✅
 
 ### Phase 18A — Bulk WhatsApp Reminders
 - Screen: /app/frontend/app/bulk-reminders.tsx
